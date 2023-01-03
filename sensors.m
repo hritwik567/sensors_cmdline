@@ -2,6 +2,22 @@
 #import <IOKit/hidsystem/IOHIDEventSystemClient.h>
 
 #include <unistd.h>
+#include <mach/mach_time.h>
+
+int getUptimeInMilliseconds()
+{
+    const int64_t kOneMillion = 1000 * 1000;
+    static mach_timebase_info_data_t s_timebase_info;
+
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        (void) mach_timebase_info(&s_timebase_info);
+    });
+
+    // mach_absolute_time() returns billionth of seconds,
+    // so divide by one million to get milliseconds
+    return (int)((mach_absolute_time() * s_timebase_info.numer) / (kOneMillion * s_timebase_info.denom));
+}
 
 // Declarations from other IOKit source code
 typedef struct __IOHIDEvent* IOHIDEventRef;
@@ -104,7 +120,7 @@ void dumpValues(NSArray* kvs)
     for (int i = 0; i < count; i++) {
         if (i > 0)
             printf(", ");
-        printf("%lf", [[kvs[i] lastObject] doubleValue]);
+        printf("%.2lf", [[kvs[i] lastObject] doubleValue]);
     }
 }
 
@@ -182,6 +198,7 @@ int main(int argc, char* argv[])
     NSArray* thermalNames = getProductNames(thermalSensors);
 
     bool shown = false;
+    int start_time = getUptimeInMilliseconds();
     while (1) {
         NSArray* currentValues = getPowerValues(currentSensors);
         NSArray* voltageValues = getPowerValues(voltageSensors);
@@ -192,6 +209,7 @@ int main(int argc, char* argv[])
         NSArray* sortedThermal = sortKeyValuePairs(thermalNames, thermalValues);
 
         if (shown == false) {
+            printf("Timestamp, ");
             if (voltage_show) {
                 dumpNames(sortedVoltage, @"V");
                 printf(", ");
@@ -206,6 +224,7 @@ int main(int argc, char* argv[])
             printf("\n");
             shown = true;
         }
+        printf("%d, ", getUptimeInMilliseconds() - start_time);
         if (voltage_show) {
             dumpValues(sortedVoltage);
             printf(", ");
@@ -223,8 +242,8 @@ int main(int argc, char* argv[])
         CFRelease(voltageValues);
         CFRelease(thermalValues);
 
-        // sleep 1 second
-        usleep(1000000);
+        // sleep 1 ms
+        // usleep(1000);
     }
 
     return 0;
